@@ -6,12 +6,10 @@ __pycache__/
 
 models/
 runs/
-results/
+
 data/
 *.pdf
 
-REBUTTAL.md
-REPRODUCTION_RESULTS.md
 
 .env
 .venv/

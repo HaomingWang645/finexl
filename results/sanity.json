@@ -1,0 +1,114 @@
+{
+  "planted": [
+    "vibrant",
+    "abstract"
+  ],
+  "kept_concepts": [
+    "abstract"
+  ],
+  "kept_weights": [
+    0.9078463976015636
+  ],
+  "decomp_error_relative": 0.44078127576584303,
+  "rejected_for_orthogonality": [
+    {
+      "concept": "vibrant",
+      "ortho_score": 0.4490952456965782
+    },
+    {
+      "concept": "geometric abstraction",
+      "ortho_score": 0.7434590280157017
+    },
+    {
+      "concept": "colorful",
+      "ortho_score": 0.4316255360906176
+    },
+    {
+      "concept": "vivid",
+      "ortho_score": 0.422131852882926
+    },
+    {
+      "concept": "photorealistic",
+      "ortho_score": 0.49538694793648425
+    },
+    {
+      "concept": "minimalist",
+      "ortho_score": 0.5159138798112453
+    },
+    {
+      "concept": "oil painting",
+      "ortho_score": 0.4044386677617696
+    },
+    {
+      "concept": "pixel-art",
+      "ortho_score": 0.3716643885065965
+    },
+    {
+      "concept": "non-figurative",
+      "ortho_score": 0.3487982419208825
+    },
+    {
+      "concept": "blurry",
+      "ortho_score": 0.3672232893801275
+    },
+    {
+      "concept": "vintage",
+      "ortho_score": 0.2586305154655718
+    },
+    {
+      "concept": "sketch",
+      "ortho_score": 0.3451106365960634
+    },
+    {
+      "concept": "high-contrast",
+      "ortho_score": 0.26306549545973357
+    },
+    {
+      "concept": "monochrome",
+      "ortho_score": 0.2250875366119442
+    }
+  ],
+  "top_two_recovered": true,
+  "pass_B_no_ortho_filter": {
+    "concepts": [
+      "abstract",
+      "vibrant",
+      "geometric abstraction",
+      "colorful",
+      "vivid",
+      "photorealistic",
+      "minimalist",
+      "oil painting",
+      "pixel-art",
+      "non-figurative",
+      "blurry",
+      "vintage",
+      "sketch",
+      "high-contrast",
+      "monochrome"
+    ],
+    "weights": [
+      0.7181472952942772,
+      0.7160283363108585,
+      0.04795294716789008,
+      0.13470024033812572,
+      -0.04665816551866445,
+      0.009072947123098196,
+      -0.09512107864634986,
+      0.01120238992158869,
+      0.015510335308682639,
+      -0.05973171960833078,
+      -0.03894220301417238,
+      0.03825406310520215,
+      -0.0377435086330584,
+      0.042868837149254116,
+      -0.01171383680806524
+    ],
+    "decomp_error_relative": 0.2537631485757043,
+    "top_two": [
+      "abstract",
+      "vibrant"
+    ],
+    "top_two_recovered": true
+  }
+}
