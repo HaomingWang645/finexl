@@ -1,0 +1,48 @@
+#!/bin/bash
+# Train multi-aspect LoRAs by mixing style training data, for Table 3.
+#  - 2-aspect: 6 pairs (50/50 mix), snapshot at step 200
+#  - 3-aspect: 4 triples (33/33/33 mix), snapshot at step 200
+#  - 4-aspect: 1 quadruple (25/25/25/25 mix), snapshot at step 200
+# Total 11 LoRAs at ~3 min each = ~35 min.
+set -e
+cd /home/haoming/finexl
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export CUDA_VISIBLE_DEVICES=3
+export HF_HOME=/home/haoming/finexl/models/hf_cache
+
+train_one () {
+    local out=$1; shift
+    local dirs=$1; shift
+    if [ -d "runs/lora_multi/$out/step_0200" ]; then
+        echo "SKIP $out"; return
+    fi
+    echo "=== $out  mix=$dirs ==="
+    /tmp/finexl_venv/bin/python code/train_lora.py \
+        --mixed_dirs "$dirs" \
+        --out runs/lora_multi/$out \
+        --snapshots 200 \
+        --lr 2e-4 --rank 16 --alpha 32 \
+        --caption "art" \
+        2>&1 | tee runs/lora_multi_${out}.log | tail -3
+}
+
+# 2-aspect
+for PAIR in "ukiyo+watercolor" "ukiyo+pixel_art" "ukiyo+oil_painting" \
+            "watercolor+pixel_art" "watercolor+oil_painting" \
+            "pixel_art+oil_painting"; do
+    A=${PAIR%+*}; B=${PAIR#*+}
+    train_one "${A}_${B}" "data/styles/$A,data/styles/$B"
+done
+
+# 3-aspect
+for TRI in "ukiyo+watercolor+pixel_art" "ukiyo+watercolor+oil_painting" \
+           "ukiyo+pixel_art+oil_painting" "watercolor+pixel_art+oil_painting"; do
+    a=${TRI%%+*}; rest=${TRI#*+}; b=${rest%%+*}; c=${rest#*+}
+    train_one "${a}_${b}_${c}" "data/styles/$a,data/styles/$b,data/styles/$c"
+done
+
+# 4-aspect
+train_one "ukiyo_watercolor_pixel_art_oil_painting" \
+    "data/styles/ukiyo,data/styles/watercolor,data/styles/pixel_art,data/styles/oil_painting"
+
+echo "=== all multi-aspect LoRAs done ==="
