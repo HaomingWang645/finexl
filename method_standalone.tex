@@ -1,0 +1,38 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+% Macros that the original paper uses
+\newcommand{\finexl}{FineXL}
+
+% Stub bibliography commands so \cite resolves without a .bib file
+\renewcommand{\cite}[1]{[\textcolor{gray}{\small #1}]}
+
+% Stub Section/figure references (no real labels)
+\newcommand{\stubref}[1]{\textcolor{gray}{\small\textsf{#1}}}
+
+\title{FineXL --- Section 4 (Method, redrafted)}
+\author{Anonymous}
+\date{}
+
+\begin{document}
+\maketitle
+
+\noindent\emph{This document is a standalone render of Section~4
+(\emph{Method}) of the ECCV 2026 submission \#6486 with the improved
+pipeline. Cross-references to figures, sections, and bibliography entries
+that live in the surrounding paper are rendered as gray placeholders
+(e.g.\ \stubref{Figure~4} or \cite{ref-key}). Mathematical content is
+unchanged from the LaTeX source in \texttt{method.tex}.}
+
+\bigskip\hrule\bigskip
+
+\input{method.tex}
+
+\end{document}

@@ -1,0 +1,304 @@
+% =====================================================================
+% Section 4 — Method (redrafted to reflect the improved FineXL pipeline)
+%
+% Drop-in replacement for Section 4 of the ECCV 2026 #6486 submission.
+% Assumes the same notation as Sections 3 and 5: G_base, G_personal,
+% probe prompts t_i, image encoder Enc_img, text encoder Enc_text, etc.
+%
+% Required packages (already included in the paper template):
+%   amsmath, amssymb, algorithm, algorithmic
+% Plus the macro \finexl already defined in the original paper.
+% =====================================================================
+
+\section{Method}
+\label{sec:method}
+
+We present our FineXL design, illustrated in Figure~\ref{fig:design}. Given a
+pre-trained model $G_{\mathrm{base}}$ and a personalized model
+$G_{\mathrm{personal}}$, our pipeline (i) extracts the distributional
+divergence between their outputs into a high-level vector
+$V_{\mathrm{div}}$ in CLIP image-feature space (Section~\ref{sec:vdiv});
+(ii)~assembles a candidate set of low-level concepts in natural language and
+maps each to a vector in the same representation space using a domain-matched
+probe set (Sections~\ref{sec:concepts}--\ref{sec:fC}); (iii)~projects both
+$V_{\mathrm{div}}$ and the concept vectors into a low-dimensional, whitened
+\emph{style subspace} (Section~\ref{sec:subspace}); and (iv)~decomposes
+$V_{\mathrm{div}}$ as a non-negative sparse combination of the concept vectors
+inside that subspace (Section~\ref{sec:decompose}). The non-negative
+coefficients are returned as scores quantifying the level of personalization
+in each aspect.
+
+\subsection{Quantifying the Distributional Divergence}
+\label{sec:vdiv}
+
+We use an image encoder $\mathrm{Enc}_{\mathrm{img}}$ that shares an aligned
+representation space with a text encoder
+$\mathrm{Enc}_{\mathrm{text}}$~\cite{clip} to extract the divergence between
+the two models' output distributions into a single vector:
+\begin{equation}
+\label{eq:vdiv}
+V_{\mathrm{div}} \;=\; \mathbb{E}_{t \in \mathcal{T}}
+\bigl\{
+  \mathrm{Enc}_{\mathrm{img}}\!\bigl[G_{\mathrm{personal}}(t,z)\bigr]
+  -
+  \mathrm{Enc}_{\mathrm{img}}\!\bigl[G_{\mathrm{base}}(t,z)\bigr]
+\bigr\},
+\end{equation}
+where $z$ denotes random noise. In practice the expectation is estimated by
+sampling a finite set of \emph{probe prompts}
+$\mathcal{T}=\{t_1,\dots,t_n\}$. The number of probes needed for $V_{\mathrm{div}}$ to
+converge in cosine distance is studied in Appendix~B; for the experiments in
+this paper we use $n{=}25$.
+
+\subsection{Candidate Concepts}
+\label{sec:concepts}
+
+The candidate concepts $\mathcal{C}=\{C_1,\dots,C_N\}$ form the natural-language
+vocabulary against which $V_{\mathrm{div}}$ will be decomposed. We support two
+sources, with a strong empirical preference for the first.
+
+\paragraph{Fixed style vocabulary (default).}
+We curate a domain-aware vocabulary of $N{=}150$ short phrases covering
+artistic styles, color palettes, rendering modalities, textural attributes,
+and mood descriptors. The vocabulary is reused across all personalized
+models, removing per-model variance in the candidate set and eliminating the
+cost of querying a vision-language model. Empirically, this vocabulary
+captures the same distinct aspects of personalization as a per-model VLM
+proposer, while avoiding the proposer's hallucination risk
+(Appendix~\ref{app:vocab}).
+
+\paragraph{Per-model VLM augmentation (optional).}
+When a personalized model targets aspects outside the curated vocabulary
+(e.g.\ a domain-specific subject), we additionally prompt a vision-language
+model on multiple pairs of generated outputs and add the union of its
+single-word adjectives or short phrases to $\mathcal{C}$. This augmentation
+is strictly additive to the fixed vocabulary, never replaces it.
+
+\subsection{Mapping Concepts to the Representation Space}
+\label{sec:fC}
+
+Each concept $C_i$ is mapped to a vector $f(C_i)\in\mathbb{R}^d$ in the same
+representation space as $V_{\mathrm{div}}$ via the text encoder. Following
+the linear-representation hypothesis~\cite{park2023linear}, we represent each
+concept as the mean shift of text embeddings induced by appending it to a
+probe prompt:
+\begin{equation}
+\label{eq:fC}
+f(C_i) \;=\; \frac{1}{n}\sum_{j=1}^{n}
+\Bigl\{
+  \mathrm{Enc}_{\mathrm{text}}\!\bigl[t_j \cup C_i\bigr]
+  -
+  \mathrm{Enc}_{\mathrm{text}}\!\bigl[t_j\bigr]
+\Bigr\}.
+\end{equation}
+
+\paragraph{Domain-matched probe prompts.}
+A subtle but consequential design choice is the probe set used in
+Eq.~\eqref{eq:fC}. Although $f(C)$ is a property of the encoder, the
+\emph{usefulness} of $f(C)$ depends on whether its direction matches the
+direction of $V_{\mathrm{div}}$ for the prompt distribution actually being
+evaluated. We therefore use the \emph{same} probe prompts in
+Eq.~\eqref{eq:fC} as those used to estimate $V_{\mathrm{div}}$ in
+Eq.~\eqref{eq:vdiv}. This domain-matched choice noticeably improves the
+alignment of concept directions with $V_{\mathrm{div}}$ (see
+Section~\ref{sec:experiments}).
+
+\subsection{The Style Subspace}
+\label{sec:subspace}
+
+The CLIP text encoder is not trained to put style concepts along independent
+directions, and indeed concept vectors $\{f(C_i)\}$ exhibit substantial
+shared structure: in our 150-word vocabulary the mean pairwise cosine is
+$0.325$ in CLIP-ViT-B/32 text space. This shared structure is precisely what
+makes a naive linear decomposition of $V_{\mathrm{div}}$ unreliable in
+ambient CLIP space: every $f(C_i)$ has a non-trivial projection onto a
+shared ``appended-text'' direction, regardless of whether $C_i$ is
+semantically relevant.
+
+We therefore project both the concept vectors and $V_{\mathrm{div}}$ into a
+low-dimensional whitened subspace in which redundant variation has been
+absorbed and the remaining axes carry style information. Let
+\begin{equation}
+F \;=\; \begin{bmatrix} f(C_1)^\top \\ \vdots \\ f(C_N)^\top \end{bmatrix}
+\in\mathbb{R}^{N\times d},
+\quad
+\bar{F} \;=\; F - \mathbf{1}\,\mu^\top,
+\quad
+\mu \;=\; \tfrac{1}{N}\textstyle\sum_i f(C_i),
+\end{equation}
+and let $\bar{F} = U\Sigma V^\top$ be its thin SVD with singular values
+$\sigma_1 \ge \sigma_2 \ge \cdots$. We retain the leading $K$ right
+singular directions
+$V_K \in \mathbb{R}^{d\times K}$ (with $K{=}18$ in our experiments;
+see Appendix~\ref{app:K}) and define the \emph{style-subspace
+projection-and-whitening operator}
+\begin{equation}
+\label{eq:Wpca}
+\Pi_K \;=\;
+V_K \,
+\bigl(\Sigma_K^\top \Sigma_K / (N-1) + \varepsilon I\bigr)^{-1/2}
+V_K^\top
+\;\in\; \mathbb{R}^{d\times d},
+\end{equation}
+where $\Sigma_K$ stacks the top-$K$ singular values and
+$\varepsilon{=}10^{-3}$ is a small ridge term ensuring numerical stability.
+$\Pi_K$ both \emph{truncates} (zeroing variation outside the top-$K$ PCs) and
+\emph{whitens} (scaling each retained direction by its inverse standard
+deviation), and is symmetric.
+
+We apply $\Pi_K$ uniformly to both sides of the upcoming decomposition:
+\begin{equation}
+\widetilde{V}_{\mathrm{div}} \;=\; \Pi_K\, V_{\mathrm{div}},
+\qquad
+\widetilde{f}(C_i) \;=\; \Pi_K\, f(C_i).
+\end{equation}
+
+The number of retained components $K$ is the only structural hyperparameter
+introduced here. Empirically the explanation accuracy is robust to
+$K\!\in\!\{15,\dots,22\}$, peaks at $K{=}18$, and degrades both for very
+small $K$ (style signal is truncated) and very large $K$ (the rank-deficient
+noise floor is reintroduced; cf.\ the $50$-word vocabulary in
+Section~\ref{sec:experiments} where $K \le 30$).
+
+\paragraph{Comparison to orthogonality filtering.}
+A simpler alternative is to greedily filter concepts whose vectors are not
+mutually orthogonal in ambient $\mathbb{R}^d$. We initially considered this
+approach, but it has two drawbacks. First, since style adjectives in CLIP
+are far from orthogonal even pairwise, any reasonable orthogonality
+threshold either rejects nearly all candidates (collapsing the explanation
+to a single concept) or admits substantially aligned vectors that hurt the
+decomposition. Second, filtering is a hard, sequential decision that
+discards information rather than redistributing it. The PCA-truncated
+whitening in Eq.~\eqref{eq:Wpca} achieves the same end---decorrelating
+concept directions and removing redundancy---continuously and in a single
+linear step, while preserving every candidate concept's contribution.
+
+\subsection{Sparse Decomposition with Non-Negative Coefficients}
+\label{sec:decompose}
+
+Inside the style subspace, we decompose $\widetilde{V}_{\mathrm{div}}$ as a
+\emph{non-negative} linear combination of $\{\widetilde{f}(C_i)\}$:
+\begin{equation}
+\label{eq:nnls}
+\mathbf{w}^\star \;=\;
+\arg\min_{\mathbf{w}\succeq 0}\;
+\Bigl\|\widetilde{V}_{\mathrm{div}}
+- \textstyle\sum_{i=1}^{N} w_i\,\widetilde{f}(C_i)\Bigr\|_2.
+\end{equation}
+We solve Eq.~\eqref{eq:nnls} with the active-set non-negative least-squares
+solver of Lawson and Hanson~\cite{lawson1995solving}, which yields a sparse
+solution with no explicit $\ell_1$ regularization required.
+
+\paragraph{Why non-negativity matters.}
+The unconstrained least-squares solution permits arbitrary signs and can
+fit $\widetilde{V}_{\mathrm{div}}$ by adding and cancelling small
+contributions from many concepts, regardless of whether each concept
+genuinely describes the personalization. The non-negativity constraint
+in Eq.~\eqref{eq:nnls} encodes the paper's intended interpretation:
+$w_i$ measures \emph{how strongly} concept $C_i$ is present, and
+``negative presence'' is not meaningful. The constraint induces sparsity
+naturally---most $w_i$ collapse to zero---so the remaining nonzero
+coefficients identify the dominant aspects of personalization and their
+relative strengths.
+
+\paragraph{Explanation vector for downstream tasks.}
+For tasks that need a single dense representation of the explanation (e.g.\
+the model-selection proxy in Section~\ref{sec:experiments}), we form
+\begin{equation}
+\label{eq:expl_vec}
+e \;=\; \frac{
+  \sum_{i:\, w_i^\star>0}\, w_i^\star\,\widetilde{f}(C_i)
+}{
+  \bigl\|\sum_{i:\, w_i^\star>0}\, w_i^\star\,\widetilde{f}(C_i)\bigr\|_2
+}.
+\end{equation}
+Since $\Pi_K$ is applied uniformly to both sides of the decomposition and
+$e$ lives in the same whitened subspace, cosine similarity between
+explanation vectors of different models is a meaningful measure of
+explanation similarity.
+
+\paragraph{Top-$M$ concept summary.}
+For the natural-language explanation, we sort the active concepts by $w_i^\star$
+and report the top-$M$ (with $M{=}5$ by default) together with their
+non-negative coefficients. The remaining coefficients are typically
+exactly zero (a property of NNLS) and need not be enumerated.
+
+% --------------------------- Algorithm box ---------------------------
+\begin{algorithm}[t]
+\caption{\finexl{}---improved}
+\label{alg:finexl}
+\begin{algorithmic}[1]
+\REQUIRE Base model $G_{\mathrm{base}}$, personalized model $G_{\mathrm{personal}}$,
+         probe prompts $\mathcal{T}=\{t_1,\dots,t_n\}$,
+         candidate concepts $\mathcal{C}=\{C_1,\dots,C_N\}$,
+         retained-component count $K$.
+\STATE $V_{\mathrm{div}} \gets 0$
+\FOR{$t_j \in \mathcal{T}$}
+  \STATE $I_j^{\mathrm{p}} \gets G_{\mathrm{personal}}(t_j,z)$,\quad
+         $I_j^{\mathrm{b}} \gets G_{\mathrm{base}}(t_j,z)$
+  \STATE $V_{\mathrm{div}} \mathrel{+}=
+         \mathrm{Enc}_{\mathrm{img}}[I_j^{\mathrm{p}}]
+         - \mathrm{Enc}_{\mathrm{img}}[I_j^{\mathrm{b}}]$
+\ENDFOR
+\STATE $V_{\mathrm{div}} \gets V_{\mathrm{div}}/n$ \hfill $\triangleright$ Eq.~\eqref{eq:vdiv}
+\FOR{$C_i \in \mathcal{C}$}
+  \STATE $f(C_i) \gets
+         \tfrac{1}{n}\sum_{j} \bigl\{
+           \mathrm{Enc}_{\mathrm{text}}[t_j \cup C_i] -
+           \mathrm{Enc}_{\mathrm{text}}[t_j]
+         \bigr\}$ \hfill $\triangleright$ Eq.~\eqref{eq:fC}
+\ENDFOR
+\STATE Stack $f(C_i)$ as rows of $F\in\mathbb{R}^{N\times d}$;
+       compute the centred SVD $F-\mathbf{1}\mu^\top = U\Sigma V^\top$.
+\STATE $\Pi_K \gets V_{:,1:K}\,(\Sigma_K^\top\Sigma_K/(N{-}1)+\varepsilon I)^{-1/2}\,V_{:,1:K}^\top$
+       \hfill $\triangleright$ Eq.~\eqref{eq:Wpca}
+\STATE $\widetilde{V}_{\mathrm{div}} \gets \Pi_K V_{\mathrm{div}}$;\;
+       $\widetilde{F} \gets F\Pi_K$
+\STATE $\mathbf{w}^\star \gets \mathrm{NNLS}\!\bigl(\widetilde{F}^\top,\,
+       \widetilde{V}_{\mathrm{div}}\bigr)$ \hfill $\triangleright$ Eq.~\eqref{eq:nnls}
+\STATE $e \gets \widetilde{F}^\top \mathbf{w}^\star /
+       \|\widetilde{F}^\top \mathbf{w}^\star\|_2$
+\STATE \textbf{return} non-zero entries of $\mathbf{w}^\star$ together with
+       their concept names; explanation vector $e$.
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Discussion of design choices}
+\label{sec:design}
+
+The improved pipeline differs from a naive linear-decomposition baseline
+along four axes, each motivated by an explicit failure mode:
+
+\begin{itemize}
+\item \textbf{Style subspace via PCA-truncated whitening
+      (Section~\ref{sec:subspace}).}
+      Without this step, every $f(C_i)$ has a non-trivial projection onto a
+      shared ``any-text-appended'' direction in CLIP, and unrelated concepts
+      have nearly the same alignment with $V_{\mathrm{div}}$ as relevant
+      ones. PCA-truncate-and-whiten removes the dominant shared variation
+      and rescales the remaining directions, so $\langle
+      \widetilde{V}_{\mathrm{div}},\widetilde{f}(C_i)\rangle$ depends
+      primarily on whether $C_i$ is semantically relevant.
+
+\item \textbf{Non-negativity (Section~\ref{sec:decompose}).}
+      Unconstrained least-squares uses signed cancellation to fit
+      $V_{\mathrm{div}}$, which is incompatible with the interpretation of
+      $w_i$ as a degree of personalization. NNLS enforces the right sign
+      structure and induces sparsity automatically.
+
+\item \textbf{Domain-matched probes (Section~\ref{sec:fC}).}
+      The probe-prompt distribution influences $f(C)$. Matching probes to
+      the prompts on which $V_{\mathrm{div}}$ is computed brings concept
+      directions into the same operating distribution.
+
+\item \textbf{Curated vocabulary (Section~\ref{sec:concepts}).}
+      A fixed style vocabulary makes $\mathcal{C}$ deterministic and large
+      enough to reduce per-model variance. The vocabulary is the only piece
+      of the pipeline that depends on the target domain, and is shared
+      across all personalized models within that domain.
+\end{itemize}
+
+These four changes are independent and each contributes additively to the
+end-to-end performance. We isolate their individual effects in
+Section~\ref{sec:experiments} via an ablation that disables each one in
+turn.
